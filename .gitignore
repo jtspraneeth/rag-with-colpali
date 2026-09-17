@@ -1,0 +1,41 @@
+# Environment & Secrets
+.env
+.env*.local
+
+# Python Cache & Compiled Files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual Environments
+.venv/
+venv/
+env/
+ENV/
+build/
+dist/
+*.egg-info/
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Data & Persistence (Vector DB, rendered images, user uploads)
+data/chroma_db/
+data/page_images/
+data/documents/*
+!data/documents/.gitkeep
+
+# Logs & Temporary Files
+*.log
+*.tmp
+tmp/
+scratch/
+
+# IDE & System Files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
