@@ -15,12 +15,13 @@ class BM25Retriever:
         self.bm25: Optional[BM25Okapi] = None
 
     def add_chunks(self, chunks: List[DocumentChunk]):
-        """Adds document chunks to the BM25 lexical index."""
+        """Adds document chunks incrementally to the BM25 lexical index."""
         if not chunks:
             return
         
+        new_tokens = [tokenize(c.text) for c in chunks]
         self.chunks.extend(chunks)
-        self.corpus_tokens = [tokenize(c.text) for c in self.chunks]
+        self.corpus_tokens.extend(new_tokens)
         if self.corpus_tokens:
             self.bm25 = BM25Okapi(self.corpus_tokens)
 

@@ -39,13 +39,15 @@ class ClaimVerifier:
             # Exclude common stop words
             claim_keywords = {w for w in claim_words if w not in {"the", "is", "at", "which", "on", "and", "a", "an", "was", "were", "to", "in", "of", "for"}}
 
-            for ev in evidence_results:
-                ev_words = set(re.findall(r'\w+', ev.text.lower()))
-                if not claim_keywords:
-                    continue
+            target_words = claim_keywords if claim_keywords else claim_words
 
-                common = claim_keywords.intersection(ev_words)
-                overlap_ratio = len(common) / len(claim_keywords)
+            for ev in evidence_results:
+                if not target_words:
+                    continue
+                ev_words = set(re.findall(r'\w+', ev.text.lower()))
+
+                common = target_words.intersection(ev_words)
+                overlap_ratio = len(common) / len(target_words)
 
                 if overlap_ratio > best_overlap_score:
                     best_overlap_score = overlap_ratio

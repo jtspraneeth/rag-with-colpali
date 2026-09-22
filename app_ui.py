@@ -1,6 +1,13 @@
 import os
+import sys
 import time
 from pathlib import Path
+
+# Ensure project root is in sys.path
+root_dir = Path(__file__).resolve().parent
+if str(root_dir) not in sys.path:
+    sys.path.insert(0, str(root_dir))
+
 import streamlit as st
 from PIL import Image
 
@@ -54,6 +61,7 @@ with st.sidebar:
     st.image("https://img.icons8.com/color/96/000000/artificial-intelligence.png", width=64)
     st.markdown("### System Architecture")
     st.info(f"**Visual Backend**: {rag.colpali_retriever.backend_name}")
+    st.info(f"**LLM Engine**: {settings.llm_provider.upper()} ({settings.default_llm_model})")
     st.success(f"**Indexed Documents**: {len(rag.indexed_documents)}")
 
     st.markdown("---")
@@ -121,15 +129,61 @@ with tab_chat:
         st.markdown("---")
         st.markdown("### 📑 Verified Evidence & Source Panel")
         
-        ev_cols = st.columns(min(3, max(1, len(res["retrieved_results"]))))
-        for idx, item in enumerate(res["retrieved_results"][:3]):
-            with ev_cols[idx]:
-                st.markdown(f"**[{idx+1}] {item['document_name']} (Page {item['page']})**")
-                st.caption(f"Score: {item['score']} | Method: {item['retrieval_method']}")
-                st.text_area(f"Chunk text ({item['chunk_id']}):", item["text"], height=140, key=f"chunk_txt_{idx}")
+        # Deduplicate evidence items strictly by normalized (document_name, page)
+        unique_evidence = []
+        seen_keys = set()
+        
+        for item in res["retrieved_results"]:
+            doc_norm = str(item.get("document_name", "")).strip().lower()
+            page_norm = int(item.get("page", 1))
+            key = (doc_norm, page_norm)
+            
+            if key not in seen_keys:
+                seen_keys.add(key)
+                item_copy = dict(item)
+                unique_evidence.append(item_copy)
+            else:
+                # Merge additional chunk text for the same page so context is preserved
+                for existing in unique_evidence:
+                    if (str(existing["document_name"]).strip().lower(), int(existing["page"])) == key:
+                        if item["text"] not in existing["text"]:
+                            existing["text"] += f"\n\n--- Chunk ({item['chunk_id']}) ---\n" + item["text"]
+                        if not existing.get("image_path") and item.get("image_path"):
+                            existing["image_path"] = item["image_path"]
+                        break
+
+        num_items = len(unique_evidence)
+        
+        if num_items > 0:
+            st.markdown(f"#### Verified Context Pages ({num_items} Unique Page{'s' if num_items != 1 else ''})")
+            
+            # Display items in dynamic rows of up to 3 columns per row
+            cols_per_row = 3
+            for row_idx in range(0, num_items, cols_per_row):
+                row_items = unique_evidence[row_idx : row_idx + cols_per_row]
+                ev_cols = st.columns(len(row_items))
                 
-                if item.get("image_path") and Path(item["image_path"]).exists():
-                    st.image(item["image_path"], caption=f"Rendered Page {item['page']} Visual Evidence", use_container_width=True)
+                for idx, item in enumerate(row_items):
+                    item_num = row_idx + idx + 1
+                    with ev_cols[idx]:
+                        st.markdown(f"**[{item_num}] {item['document_name']} — Page {item['page']}**")
+                        st.caption(f"Score: {item['score']} | Method: {item['retrieval_method']}")
+                        st.text_area(
+                            f"Context Text (Page {item['page']}):", 
+                            item["text"], 
+                            height=140, 
+                            key=f"chunk_txt_{item['document_name']}_p{item['page']}_{item_num}"
+                        )
+                        
+                        img_p = item.get("image_path")
+                        if img_p and Path(img_p).exists():
+                            st.image(
+                                img_p, 
+                                caption=f"{item['document_name']} — Page {item['page']} Rendered Visual Evidence", 
+                                use_container_width=True
+                            )
+        else:
+            st.info("No unique document evidence chunks retrieved for this query.")
 
 # ---------------------------------------------------------
 # TAB 2: DOCUMENTS INGESTION
@@ -184,10 +238,14 @@ with tab_eval:
     st.write("Compare empirical metrics across Basic Vector RAG, Hybrid RAG, and Adaptive Multimodal RAG.")
 
     if st.button("⚡ Run Live Benchmark Evaluation Suite"):
+        doc_targets = [d.get("document_name", d.get("document_id", "")) for d in rag.indexed_documents] if rag.indexed_documents else []
+        if not doc_targets:
+            doc_targets = ["doc_001"]
+
         test_queries = [
-            {"query": "What is the revenue growth in 2025?", "relevant_doc_ids": ["doc_001"]},
-            {"query": "Compare revenue and employee growth between 2023 and 2025.", "relevant_doc_ids": ["doc_001"]},
-            {"query": "Show table layout figures on Page 2.", "relevant_doc_ids": ["doc_001"]}
+            {"query": "What is the revenue growth in 2025?", "relevant_doc_ids": doc_targets},
+            {"query": "Compare revenue and employee growth between 2023 and 2025.", "relevant_doc_ids": doc_targets},
+            {"query": "Show table layout figures on Page 2.", "relevant_doc_ids": doc_targets}
         ]
         runner = BenchmarkRunner(rag)
         with st.spinner("Running evaluation benchmark suite across 3 modes..."):
@@ -206,11 +264,34 @@ with tab_settings:
     col_s1, col_s2 = st.columns(2)
     with col_s1:
         st.markdown("#### Retrieval Weights")
-        st.slider("Dense Weight (alpha)", 0.0, 1.0, settings.dense_weight)
-        st.slider("BM25 Weight (beta)", 0.0, 1.0, settings.bm25_weight)
-        st.slider("ColPali Weight (gamma)", 0.0, 1.0, settings.colpali_weight)
+        settings.dense_weight = st.slider("Dense Weight (alpha)", 0.0, 1.0, settings.dense_weight)
+        settings.bm25_weight = st.slider("BM25 Weight (beta)", 0.0, 1.0, settings.bm25_weight)
+        settings.colpali_weight = st.slider("ColPali Weight (gamma)", 0.0, 1.0, settings.colpali_weight)
 
     with col_s2:
         st.markdown("#### Self-Correction Thresholds")
-        st.slider("Confidence Threshold", 0.5, 0.95, settings.confidence_threshold)
-        st.number_input("Max Retries", 1, 5, settings.max_retries)
+        settings.confidence_threshold = st.slider("Confidence Threshold", 0.5, 0.95, settings.confidence_threshold)
+        settings.max_retries = st.number_input("Max Retries", 1, 5, settings.max_retries)
+
+    st.markdown("---")
+    st.markdown("#### 🤖 LLM Generation Engine Settings")
+    provider_opts = ["gemini", "openai", "mistral", "ollama", "mock"]
+    curr_prov = settings.llm_provider.lower()
+    p_idx = provider_opts.index(curr_prov) if curr_prov in provider_opts else 0
+
+    new_provider = st.selectbox("Active LLM Provider:", provider_opts, index=p_idx, help="Select LLM provider or 'mock' for smart offline synthesis.")
+    if new_provider != settings.llm_provider:
+        settings.llm_provider = new_provider
+        rag.llm.provider = new_provider
+        st.success(f"Switched LLM Provider to '{new_provider}'")
+
+    if new_provider == "gemini":
+        g_key = st.text_input("Gemini API Key:", value=settings.gemini_api_key, type="password", help="Enter your Google Gemini API Key")
+        if g_key != settings.gemini_api_key:
+            settings.gemini_api_key = g_key
+            st.success("Updated Gemini API Key")
+    elif new_provider == "openai":
+        o_key = st.text_input("OpenAI API Key:", value=settings.openai_api_key, type="password", help="Enter your OpenAI API Key")
+        if o_key != settings.openai_api_key:
+            settings.openai_api_key = o_key
+            st.success("Updated OpenAI API Key")

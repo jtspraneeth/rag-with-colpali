@@ -1,6 +1,14 @@
+import sys
 import argparse
+from pathlib import Path
+
+# Ensure project root is in sys.path
+root_dir = Path(__file__).resolve().parent
+if str(root_dir) not in sys.path:
+    sys.path.insert(0, str(root_dir))
+
 import uvicorn
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File, HTTPException
 from pydantic import BaseModel
 
 from src.adaptive_rag_pipeline import AdaptiveMultimodalRAG
@@ -33,7 +41,16 @@ def query_endpoint(req: QueryRequest):
 
 @app.post("/upload")
 def upload_endpoint(file: UploadFile = File(...)):
-    save_path = settings.documents_dir / file.filename
+    # Sanitize filename against Path Traversal vulnerabilities (SEC-01)
+    safe_filename = Path(file.filename).name
+    if not safe_filename or safe_filename.startswith("."):
+        raise HTTPException(status_code=400, detail="Invalid or unsafe filename.")
+    
+    ext = safe_filename.split(".")[-1].lower()
+    if ext not in ["pdf", "docx", "txt"]:
+        raise HTTPException(status_code=400, detail="Unsupported file format. Only PDF, DOCX, and TXT are allowed.")
+
+    save_path = settings.documents_dir / safe_filename
     with open(save_path, "wb") as f:
         f.write(file.file.read())
     info = rag_system.ingest_document(str(save_path))

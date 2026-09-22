@@ -28,28 +28,25 @@ class BenchmarkRunner:
 
             # Mode 1: Basic Vector RAG
             res_m1 = self.rag.query(q_text, mode="basic_vector")
-            r_ids_m1 = [r["chunk_id"] for r in res_m1["retrieved_results"]]
-            results["mode_1_basic"]["recall"].append(compute_recall_at_k(r_ids_m1, rel_ids))
-            results["mode_1_basic"]["precision"].append(compute_precision_at_k(r_ids_m1, rel_ids))
-            results["mode_1_basic"]["mrr"].append(compute_mrr(r_ids_m1, rel_ids))
+            results["mode_1_basic"]["recall"].append(compute_recall_at_k(res_m1["retrieved_results"], rel_ids))
+            results["mode_1_basic"]["precision"].append(compute_precision_at_k(res_m1["retrieved_results"], rel_ids))
+            results["mode_1_basic"]["mrr"].append(compute_mrr(res_m1["retrieved_results"], rel_ids))
             results["mode_1_basic"]["citation_accuracy"].append(compute_trustworthiness_metrics(res_m1["verified_claims"])["citation_accuracy"])
             results["mode_1_basic"]["latency"].append(res_m1["trace"]["latencies"]["total_sec"])
 
             # Mode 2: Hybrid RAG
             res_m2 = self.rag.query(q_text, mode="hybrid")
-            r_ids_m2 = [r["chunk_id"] for r in res_m2["retrieved_results"]]
-            results["mode_2_hybrid"]["recall"].append(compute_recall_at_k(r_ids_m2, rel_ids))
-            results["mode_2_hybrid"]["precision"].append(compute_precision_at_k(r_ids_m2, rel_ids))
-            results["mode_2_hybrid"]["mrr"].append(compute_mrr(r_ids_m2, rel_ids))
+            results["mode_2_hybrid"]["recall"].append(compute_recall_at_k(res_m2["retrieved_results"], rel_ids))
+            results["mode_2_hybrid"]["precision"].append(compute_precision_at_k(res_m2["retrieved_results"], rel_ids))
+            results["mode_2_hybrid"]["mrr"].append(compute_mrr(res_m2["retrieved_results"], rel_ids))
             results["mode_2_hybrid"]["citation_accuracy"].append(compute_trustworthiness_metrics(res_m2["verified_claims"])["citation_accuracy"])
             results["mode_2_hybrid"]["latency"].append(res_m2["trace"]["latencies"]["total_sec"])
 
             # Mode 3: Adaptive Multimodal RAG
             res_m3 = self.rag.query(q_text, mode="adaptive_multimodal")
-            r_ids_m3 = [r["chunk_id"] for r in res_m3["retrieved_results"]]
-            results["mode_3_adaptive"]["recall"].append(compute_recall_at_k(r_ids_m3, rel_ids))
-            results["mode_3_adaptive"]["precision"].append(compute_precision_at_k(r_ids_m3, rel_ids))
-            results["mode_3_adaptive"]["mrr"].append(compute_mrr(r_ids_m3, rel_ids))
+            results["mode_3_adaptive"]["recall"].append(compute_recall_at_k(res_m3["retrieved_results"], rel_ids))
+            results["mode_3_adaptive"]["precision"].append(compute_precision_at_k(res_m3["retrieved_results"], rel_ids))
+            results["mode_3_adaptive"]["mrr"].append(compute_mrr(res_m3["retrieved_results"], rel_ids))
             results["mode_3_adaptive"]["citation_accuracy"].append(compute_trustworthiness_metrics(res_m3["verified_claims"])["citation_accuracy"])
             results["mode_3_adaptive"]["latency"].append(res_m3["trace"]["latencies"]["total_sec"])
 

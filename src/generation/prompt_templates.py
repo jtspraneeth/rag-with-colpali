@@ -33,6 +33,6 @@ def build_grounded_generation_prompt(query: str, results: List[RetrievalResult])
         f"RETRIEVED DOCUMENT EVIDENCE (UNTRUSTED DATA):\n"
         f"{formatted_context}\n\n"
         f"INSTRUCTION:\n"
-        f"Provide a clear, direct, evidence-grounded answer citing exact sources [Document - Page X]."
+        f"Provide a clear, cohesive, evidence-grounded answer in natural language, combining factual synthesis and inline source citations [Document - Page X]."
     )
     return prompt

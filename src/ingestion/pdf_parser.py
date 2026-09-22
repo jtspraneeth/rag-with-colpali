@@ -6,9 +6,12 @@ from typing import List, Dict, Any, Tuple, Optional
 from PIL import Image
 
 try:
-    import fitz  # PyMuPDF
+    import pymupdf as fitz  # Recommended PyMuPDF import
 except ImportError:
-    fitz = None
+    try:
+        import fitz
+    except ImportError:
+        fitz = None
 
 from src.ingestion.metadata import DocumentChunk
 from src.ingestion.chunker import StructureAwareChunker
@@ -44,53 +47,54 @@ class PDFParser:
         
         if fitz is not None:
             doc = fitz.open(str(path))
-            total_pages = len(doc)
+            try:
+                total_pages = len(doc)
 
-            for page_idx in range(total_pages):
-                page_num = page_idx + 1
-                page = doc.load_page(page_idx)
-                page_text = page.get_text("text") or ""
-                full_document_text += page_text + "\n"
+                for page_idx in range(total_pages):
+                    page_num = page_idx + 1
+                    page = doc.load_page(page_idx)
+                    page_text = page.get_text("text") or ""
+                    full_document_text += page_text + "\n"
 
-                # Render page image for visual evidence & ColPali
-                image_filename = f"{document_id}_p{page_num}.png"
-                image_path = settings.page_images_dir / image_filename
-                
-                try:
-                    pix = page.get_pixmap(dpi=150)
-                    pix.save(str(image_path))
-                    page_image_paths.append(str(image_path))
-                except Exception as e:
-                    print(f"Warning: Failed to render page {page_num} image: {e}")
+                    # Render page image for visual evidence & ColPali
+                    image_filename = f"{document_id}_p{page_num}.png"
+                    image_path = settings.page_images_dir / image_filename
+                    
+                    try:
+                        pix = page.get_pixmap(dpi=150)
+                        pix.save(str(image_path))
+                        page_image_paths.append(str(image_path))
+                    except Exception as e:
+                        print(f"Warning: Failed to render page {page_num} image: {e}")
 
-            # Extract temporal dates
-            doc_date, reporting_period = self._extract_temporal_metadata(full_document_text)
+                # Extract temporal dates
+                doc_date, reporting_period = self._extract_temporal_metadata(full_document_text)
 
-            # Chunk each page text preserving page_number & metadata
-            for page_idx in range(total_pages):
-                page_num = page_idx + 1
-                page = doc.load_page(page_idx)
-                page_text = page.get_text("text") or ""
+                # Chunk each page text preserving page_number & metadata
+                for page_idx in range(total_pages):
+                    page_num = page_idx + 1
+                    page = doc.load_page(page_idx)
+                    page_text = page.get_text("text") or ""
 
-                if not page_text.strip():
-                    continue
+                    if not page_text.strip():
+                        continue
 
-                page_chunks = self.chunker.split_text(
-                    text=page_text,
-                    document_id=document_id,
-                    document_name=document_name,
-                    page_number=page_num,
-                    source_type="pdf",
-                    document_date=doc_date,
-                    reporting_period=reporting_period,
-                    extra_metadata={
-                        "page_image_path": str(settings.page_images_dir / f"{document_id}_p{page_num}.png"),
-                        "total_pages": total_pages
-                    }
-                )
-                chunks.extend(page_chunks)
-
-            doc.close()
+                    page_chunks = self.chunker.split_text(
+                        text=page_text,
+                        document_id=document_id,
+                        document_name=document_name,
+                        page_number=page_num,
+                        source_type="pdf",
+                        document_date=doc_date,
+                        reporting_period=reporting_period,
+                        extra_metadata={
+                            "page_image_path": str(settings.page_images_dir / f"{document_id}_p{page_num}.png"),
+                            "total_pages": total_pages
+                        }
+                    )
+                    chunks.extend(page_chunks)
+            finally:
+                doc.close()
         else:
             raise RuntimeError("PyMuPDF (fitz) is required for PDF parsing and visual page rendering.")
 
