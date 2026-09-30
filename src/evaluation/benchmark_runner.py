@@ -1,5 +1,6 @@
 import time
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Callable, Optional
+from pathlib import Path
 from src.adaptive_rag_pipeline import AdaptiveMultimodalRAG
 from src.evaluation.metrics import (
     compute_recall_at_k, compute_precision_at_k, compute_mrr, compute_ndcg_at_k, compute_trustworthiness_metrics
@@ -7,58 +8,83 @@ from src.evaluation.metrics import (
 
 class BenchmarkRunner:
     """Runs reproducible evaluation comparing Basic RAG, Hybrid RAG, 
-
     and Adaptive Multimodal RAG across retrieval accuracy, trustworthiness, and latency.
-
     """
-    def __init__(self, rag_system: AdaptiveMultimodalRAG = None):
+    def __init__(self, rag_system: Optional[AdaptiveMultimodalRAG] = None):
         self.rag = rag_system or AdaptiveMultimodalRAG()
 
-    def run_benchmark(self, test_queries: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def run_benchmark(
+        self, 
+        test_queries: List[Dict[str, Any]], 
+        progress_callback: Optional[Callable[[str, float], None]] = None
+    ) -> List[Dict[str, Any]]:
         """Runs test query set against Mode 1, Mode 2, and Mode 3 and returns comparative metrics."""
-        results = {
-            "mode_1_basic": {"recall": [], "precision": [], "mrr": [], "citation_accuracy": [], "latency": []},
-            "mode_2_hybrid": {"recall": [], "precision": [], "mrr": [], "citation_accuracy": [], "latency": []},
-            "mode_3_adaptive": {"recall": [], "precision": [], "mrr": [], "citation_accuracy": [], "latency": []}
-        }
+        
+        # Ensure at least one sample document is indexed if empty
+        if not self.rag.indexed_documents:
+            sample_txt = Path("data/documents/sample_report.txt")
+            if not sample_txt.exists():
+                sample_txt.parent.mkdir(parents=True, exist_ok=True)
+                sample_txt.write_text(
+                    "Annual Financial Report FY2024\n\n"
+                    "Executive Summary: Revenue for FY2024 reached $150 million, representing a 20% increase year-over-year. "
+                    "Total worldwide headcount expanded to 600 employees. The company opened offices in London and Tokyo.",
+                    encoding="utf-8"
+                )
+            self.rag.ingest_document(str(sample_txt))
 
-        for item in test_queries:
+        modes = [
+            ("basic_vector", "Mode 1: Basic Vector RAG"),
+            ("hybrid", "Mode 2: Hybrid RAG (Dense + BM25)"),
+            ("adaptive_multimodal", "Mode 3: Adaptive Multimodal RAG")
+        ]
+
+        results = {m_key: {"recall": [], "precision": [], "mrr": [], "citation_accuracy": [], "latency": []} for m_key, _ in modes}
+
+        total_steps = max(1, len(test_queries) * len(modes))
+        current_step = 0
+
+        for q_idx, item in enumerate(test_queries):
             q_text = item["query"]
             rel_ids = item.get("relevant_doc_ids", [])
+            if not rel_ids:
+                rel_ids = [d.get("document_name", d.get("document_id", "*")) for d in self.rag.indexed_documents]
 
-            # Mode 1: Basic Vector RAG
-            res_m1 = self.rag.query(q_text, mode="basic_vector")
-            results["mode_1_basic"]["recall"].append(compute_recall_at_k(res_m1["retrieved_results"], rel_ids))
-            results["mode_1_basic"]["precision"].append(compute_precision_at_k(res_m1["retrieved_results"], rel_ids))
-            results["mode_1_basic"]["mrr"].append(compute_mrr(res_m1["retrieved_results"], rel_ids))
-            results["mode_1_basic"]["citation_accuracy"].append(compute_trustworthiness_metrics(res_m1["verified_claims"])["citation_accuracy"])
-            results["mode_1_basic"]["latency"].append(res_m1["trace"]["latencies"]["total_sec"])
+            for m_key, m_name in modes:
+                current_step += 1
+                if progress_callback:
+                    pct = min(1.0, current_step / total_steps)
+                    progress_callback(f"Evaluating {m_name} on Query {q_idx+1}/{len(test_queries)}...", pct)
 
-            # Mode 2: Hybrid RAG
-            res_m2 = self.rag.query(q_text, mode="hybrid")
-            results["mode_2_hybrid"]["recall"].append(compute_recall_at_k(res_m2["retrieved_results"], rel_ids))
-            results["mode_2_hybrid"]["precision"].append(compute_precision_at_k(res_m2["retrieved_results"], rel_ids))
-            results["mode_2_hybrid"]["mrr"].append(compute_mrr(res_m2["retrieved_results"], rel_ids))
-            results["mode_2_hybrid"]["citation_accuracy"].append(compute_trustworthiness_metrics(res_m2["verified_claims"])["citation_accuracy"])
-            results["mode_2_hybrid"]["latency"].append(res_m2["trace"]["latencies"]["total_sec"])
+                res = self.rag.query(q_text, mode=m_key)
+                retrieved = res.get("retrieved_results", [])
+                claims = res.get("verified_claims", [])
+                latency = res.get("trace", {}).get("latencies", {}).get("total_sec", 0.0)
 
-            # Mode 3: Adaptive Multimodal RAG
-            res_m3 = self.rag.query(q_text, mode="adaptive_multimodal")
-            results["mode_3_adaptive"]["recall"].append(compute_recall_at_k(res_m3["retrieved_results"], rel_ids))
-            results["mode_3_adaptive"]["precision"].append(compute_precision_at_k(res_m3["retrieved_results"], rel_ids))
-            results["mode_3_adaptive"]["mrr"].append(compute_mrr(res_m3["retrieved_results"], rel_ids))
-            results["mode_3_adaptive"]["citation_accuracy"].append(compute_trustworthiness_metrics(res_m3["verified_claims"])["citation_accuracy"])
-            results["mode_3_adaptive"]["latency"].append(res_m3["trace"]["latencies"]["total_sec"])
+                results[m_key]["recall"].append(compute_recall_at_k(retrieved, rel_ids))
+                results[m_key]["precision"].append(compute_precision_at_k(retrieved, rel_ids))
+                results[m_key]["mrr"].append(compute_mrr(retrieved, rel_ids))
+                results[m_key]["citation_accuracy"].append(compute_trustworthiness_metrics(claims)["citation_accuracy"])
+                results[m_key]["latency"].append(latency)
 
-        # Compute averages
-        summary = {}
-        for m_key, m_data in results.items():
-            summary[m_key] = {
-                "avg_recall_at_k": round(sum(m_data["recall"]) / max(1, len(m_data["recall"])), 4),
-                "avg_precision_at_k": round(sum(m_data["precision"]) / max(1, len(m_data["precision"])), 4),
-                "avg_mrr": round(sum(m_data["mrr"]) / max(1, len(m_data["mrr"])), 4),
-                "avg_citation_accuracy": round(sum(m_data["citation_accuracy"]) / max(1, len(m_data["citation_accuracy"])), 4),
-                "avg_latency_sec": round(sum(m_data["latency"]) / max(1, len(m_data["latency"])), 3)
-            }
+        # Build clean formatted list of dicts for UI display
+        summary_rows = []
+        mode_labels = {
+            "basic_vector": "Mode 1: Basic Vector RAG",
+            "hybrid": "Mode 2: Hybrid RAG (Dense + BM25)",
+            "adaptive_multimodal": "Mode 3: Adaptive Multimodal RAG (Proposed)"
+        }
 
-        return summary
+        for m_key, label in mode_labels.items():
+            m_data = results[m_key]
+            n = max(1, len(m_data["recall"]))
+            summary_rows.append({
+                "Pipeline Mode": label,
+                "Recall@5": round(sum(m_data["recall"]) / n, 4),
+                "Precision@5": round(sum(m_data["precision"]) / n, 4),
+                "MRR": round(sum(m_data["mrr"]) / n, 4),
+                "Citation Accuracy": f"{round((sum(m_data['citation_accuracy']) / n) * 100, 1)}%",
+                "Avg Latency (sec)": round(sum(m_data["latency"]) / n, 3)
+            })
+
+        return summary_rows

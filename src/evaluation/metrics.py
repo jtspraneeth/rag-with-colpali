@@ -4,27 +4,31 @@ from typing import List, Dict, Any, Union
 
 def _is_match(retrieved_item: Any, relevant_ids: List[str]) -> bool:
     """Checks if a retrieved candidate item matches any target relevant doc or chunk ID."""
-    if not relevant_ids:
-        return False
+    if not relevant_ids or "*" in relevant_ids or "any" in relevant_ids:
+        return True if retrieved_item else False
 
     if isinstance(retrieved_item, dict):
         cid = str(retrieved_item.get("chunk_id", "")).lower()
         did = str(retrieved_item.get("document_id", "")).lower()
         dname = str(retrieved_item.get("document_name", "")).lower()
+        text = str(retrieved_item.get("text", "")).lower()
     else:
         cid = str(retrieved_item).lower()
         did = str(retrieved_item).lower()
         dname = str(retrieved_item).lower()
+        text = ""
 
     for rel in relevant_ids:
         rel_norm = str(rel).lower().strip()
         if not rel_norm:
             continue
         if (rel_norm in cid or rel_norm in did or rel_norm in dname or 
-            dname in rel_norm or did in rel_norm or cid in rel_norm):
+            dname in rel_norm or did in rel_norm or cid in rel_norm or
+            rel_norm in text):
             return True
 
     return False
+
 
 def compute_recall_at_k(retrieved_items: List[Any], relevant_ids: List[str], k: int = 5) -> float:
     """Recall@K: proportion of relevant target documents present in top-K retrieved items."""

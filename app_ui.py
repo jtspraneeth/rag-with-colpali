@@ -235,25 +235,53 @@ with tab_trace:
 # ---------------------------------------------------------
 with tab_eval:
     st.markdown("### 📊 Baseline vs. Adaptive Multimodal RAG Evaluation")
-    st.write("Compare empirical metrics across Basic Vector RAG, Hybrid RAG, and Adaptive Multimodal RAG.")
+    st.write("Quantitative comparison across **Mode 1 (Basic Vector RAG)**, **Mode 2 (Hybrid RAG)**, and **Mode 3 (Adaptive Multimodal RAG)**.")
 
-    if st.button("⚡ Run Live Benchmark Evaluation Suite"):
+    col_btn, col_space = st.columns([1, 2])
+    with col_btn:
+        run_eval = st.button("⚡ Run Live Benchmark Evaluation Suite", type="primary")
+
+    if run_eval:
         doc_targets = [d.get("document_name", d.get("document_id", "")) for d in rag.indexed_documents] if rag.indexed_documents else []
-        if not doc_targets:
-            doc_targets = ["doc_001"]
 
         test_queries = [
-            {"query": "What is the revenue growth in 2025?", "relevant_doc_ids": doc_targets},
-            {"query": "Compare revenue and employee growth between 2023 and 2025.", "relevant_doc_ids": doc_targets},
-            {"query": "Show table layout figures on Page 2.", "relevant_doc_ids": doc_targets}
+            {"query": "What was the revenue for FY2024?", "relevant_doc_ids": doc_targets},
+            {"query": "Compare revenue growth and employee headcount metrics.", "relevant_doc_ids": doc_targets},
+            {"query": "Show visual figures or layout tables on Page 1.", "relevant_doc_ids": doc_targets}
         ]
+
+        progress_bar = st.progress(0.0)
+        status_text = st.empty()
+
+        def update_progress(msg: str, pct: float):
+            status_text.markdown(f"**Status:** {msg}")
+            progress_bar.progress(min(1.0, max(0.0, pct)))
+
         runner = BenchmarkRunner(rag)
-        with st.spinner("Running evaluation benchmark suite across 3 modes..."):
-            summary = runner.run_benchmark(test_queries)
-            st.session_state.benchmark_summary = summary
+        summary_rows = runner.run_benchmark(test_queries, progress_callback=update_progress)
+        st.session_state.benchmark_summary = summary_rows
+        status_text.success("✅ Evaluation Benchmark Suite completed successfully!")
+        progress_bar.progress(1.0)
 
     if "benchmark_summary" in st.session_state:
-        st.table(st.session_state.benchmark_summary)
+        import pandas as pd
+        df = pd.DataFrame(st.session_state.benchmark_summary)
+
+        st.markdown("---")
+        st.markdown("#### 📈 Benchmark Metrics Summary Table")
+        st.dataframe(df, use_container_width=True, hide_index=True)
+
+        st.markdown("#### 📊 Metric Visual Comparisons")
+        col_c1, col_c2 = st.columns(2)
+        with col_c1:
+            st.markdown("**Retrieval Accuracy (Recall@5 & Precision@5)**")
+            chart_df = df.set_index("Pipeline Mode")[["Recall@5", "Precision@5"]]
+            st.bar_chart(chart_df)
+        with col_c2:
+            st.markdown("**End-to-End Execution Latency (Seconds)**")
+            lat_df = df.set_index("Pipeline Mode")[["Avg Latency (sec)"]]
+            st.bar_chart(lat_df)
+
 
 # ---------------------------------------------------------
 # TAB 5: SETTINGS & CONFIGURATION
